@@ -1,0 +1,67 @@
+# API Keys and Environment Secrets
+.env
+.env.*
+!.env.example
+
+# Python cache and temporary files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Pytest and coverage
+.pytest_cache/
+.pytest-cache/
+.coverage
+.coverage.*
+htmlcov/
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.nox/
+.tox/
+
+# Local Marshmallow repository clones and outputs
+marshmallow/
+out_marshmallow/
+out_marshmallow_docfilter/
+out/
+**/output/
+
+# Logs and databases
+*.log
+local_db.sqlite3
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDEs and editors
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp

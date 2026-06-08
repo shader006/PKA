@@ -1,0 +1,282 @@
+{
+  "MyDataset/0": {
+    "task_id": "MyDataset/0",
+    "problem_id": "marshmallow.class_registry.get_class",
+    "prompt": "def get_class(classname: str, *, all: bool = False) -> list[SchemaType] | SchemaType:  # noqa: A002\n    \"\"\"Retrieve a class from the registry.\n\n    :raises: `marshmallow.exceptions.RegistryError` if the class cannot be found\n        or if there are multiple entries for the given class name.\n    \"\"\"\n",
+    "canonical_solution": "    try:\n        classes = _registry[classname]\n    except KeyError as error:\n        raise RegistryError(\n            f\"Class with name {classname!r} was not found. You may need \"\n            \"to import the class.\"\n        ) from error\n    if len(classes) > 1:\n        if all:\n            return _registry[classname]\n        raise RegistryError(\n            f\"Multiple classes with name {classname!r} \"\n            \"were found. Please use the full, \"\n            \"module-qualified path.\"\n        )\n    return _registry[classname][0]\n",
+    "entry_point": "get_class",
+    "base_input": [],
+    "plus_input": [],
+    "atol": 0
+  },
+  "MyDataset/1": {
+    "task_id": "MyDataset/1",
+    "problem_id": "marshmallow.class_registry.register",
+    "prompt": "def register(classname: str, cls: SchemaType) -> None:\n    \"\"\"Add a class to the registry of serializer classes. When a class is\n    registered, an entry for both its classname and its full, module-qualified\n    path are added to the registry.\n\n    Example: ::\n\n        class MyClass:\n            pass\n\n\n        register(\"MyClass\", MyClass)\n        # Registry:\n        # {\n        #   'MyClass': [path.to.MyClass],\n        #   'path.to.MyClass': [path.to.MyClass],\n        # }\n\n    \"\"\"\n",
+    "canonical_solution": "    module = cls.__module__\n    # Full module path to the class\n    # e.g. user.schemas.UserSchema\n    fullpath = f\"{module}.{classname}\"\n    # If the class is already registered; need to check if the entries are\n    # in the same module as cls to avoid having multiple instances of the same\n    # class in the registry\n    if classname in _registry and not any(\n        each.__module__ == module for each in _registry[classname]\n    ):\n        _registry[classname].append(cls)\n    elif classname not in _registry:\n        _registry[classname] = [cls]\n\n    # Also register the full path\n    if fullpath not in _registry:\n        _registry.setdefault(fullpath, []).append(cls)\n    else:\n        # If fullpath does exist, replace existing entry\n        _registry[fullpath] = [cls]\n",
+    "entry_point": "register",
+    "base_input": [],
+    "plus_input": [],
+    "atol": 0
+  },
+  "MyDataset/2": {
+    "task_id": "MyDataset/2",
+    "problem_id": "marshmallow.decorators.post_dump",
+    "prompt": "def post_dump(\n    fn: typing.Callable[..., typing.Any] | None = None,\n    *,\n    pass_collection: bool = False,\n    pass_original: bool = False,\n) -> typing.Callable[..., typing.Any]:\n    \"\"\"Register a method to invoke after serializing an object. The method\n    receives the serialized object and returns the processed object.\n\n    By default it receives a single object at a time, transparently handling the ``many``\n    argument passed to the `Schema <marshmallow.Schema>`'s :func:`~marshmallow.Schema.dump` call.\n    If ``pass_collection=True``, the raw data (which may be a collection) is passed.\n\n    If ``pass_original=True``, the original data (before serializing) will be passed as\n    an additional argument to the method.\n\n    .. versionchanged:: 3.0.0 ``many`` is always passed as a keyword arguments to the decorated method.\n    .. versionchanged:: 4.0.0 ``pass_many`` is renamed to ``pass_collection``.\n    .. versionchanged:: 4.0.0 ``pass_collection`` and ``pass_original`` are keyword-only arguments.\n    \"\"\"\n",
+    "canonical_solution": "    return set_hook(fn, POST_DUMP, many=pass_collection, pass_original=pass_original)\n",
+    "entry_point": "post_dump",
+    "base_input": [],
+    "plus_input": [],
+    "atol": 0
+  },
+  "MyDataset/3": {
+    "task_id": "MyDataset/3",
+    "problem_id": "marshmallow.decorators.post_load",
+    "prompt": "def post_load(\n    fn: typing.Callable[..., typing.Any] | None = None,\n    *,\n    pass_collection: bool = False,\n    pass_original: bool = False,\n) -> typing.Callable[..., typing.Any]:\n    \"\"\"Register a method to invoke after deserializing an object. The method\n    receives the deserialized data and returns the processed data.\n\n    By default it receives a single object at a time, transparently handling the ``many``\n    argument passed to the `Schema <marshmallow.Schema>`'s :func:`~marshmallow.Schema.load` call.\n    If ``pass_collection=True``, the raw data (which may be a collection) is passed.\n\n    If ``pass_original=True``, the original data (before deserializing) will be passed as\n    an additional argument to the method.\n\n    .. versionchanged:: 3.0.0 ``partial`` and ``many`` are always passed as keyword arguments to\n        the decorated method.\n    .. versionchanged:: 4.0.0 ``pass_many`` is renamed to ``pass_collection``.\n    .. versionchanged:: 4.0.0 ``pass_collection`` and ``pass_original`` are keyword-only arguments.\n    .. versionchanged:: 4.0.0 ``unknown`` is passed as a keyword argument to the decorated method.\n    \"\"\"\n",
+    "canonical_solution": "    return set_hook(fn, POST_LOAD, many=pass_collection, pass_original=pass_original)\n",
+    "entry_point": "post_load",
+    "base_input": [],
+    "plus_input": [],
+    "atol": 0
+  },
+  "MyDataset/4": {
+    "task_id": "MyDataset/4",
+    "problem_id": "marshmallow.decorators.pre_dump",
+    "prompt": "def pre_dump(\n    fn: typing.Callable[..., typing.Any] | None = None,\n    *,\n    pass_collection: bool = False,\n) -> typing.Callable[..., typing.Any]:\n    \"\"\"Register a method to invoke before serializing an object. The method\n    receives the object to be serialized and returns the processed object.\n\n    By default it receives a single object at a time, transparently handling the ``many``\n    argument passed to the `Schema <marshmallow.Schema>`'s :func:`~marshmallow.Schema.dump` call.\n    If ``pass_collection=True``, the raw data (which may be a collection) is passed.\n\n    .. versionchanged:: 3.0.0 ``many`` is always passed as a keyword arguments to the decorated method.\n    .. versionchanged:: 4.0.0 ``pass_many`` is renamed to ``pass_collection``.\n    .. versionchanged:: 4.0.0 ``pass_collection`` is a keyword-only argument.\n    \"\"\"\n",
+    "canonical_solution": "    return set_hook(fn, PRE_DUMP, many=pass_collection)\n",
+    "entry_point": "pre_dump",
+    "base_input": [],
+    "plus_input": [],
+    "atol": 0
+  },
+  "MyDataset/5": {
+    "task_id": "MyDataset/5",
+    "problem_id": "marshmallow.decorators.pre_load",
+    "prompt": "def pre_load(\n    fn: typing.Callable[..., typing.Any] | None = None,\n    *,\n    pass_collection: bool = False,\n) -> typing.Callable[..., typing.Any]:\n    \"\"\"Register a method to invoke before deserializing an object. The method\n    receives the data to be deserialized and returns the processed data.\n\n    By default it receives a single object at a time, transparently handling the ``many``\n    argument passed to the `Schema <marshmallow.Schema>`'s :func:`~marshmallow.Schema.load` call.\n    If ``pass_collection=True``, the raw data (which may be a collection) is passed.\n\n    .. versionchanged:: 3.0.0 ``partial`` and ``many`` are always passed as keyword arguments to\n        the decorated method.\n    .. versionchanged:: 4.0.0 ``pass_many`` is renamed to ``pass_collection``.\n    .. versionchanged:: 4.0.0 ``pass_collection`` is a keyword-only argument.\n    .. versionchanged:: 4.0.0 ``unknown`` is passed as a keyword argument to the decorated method.\n    \"\"\"\n",
+    "canonical_solution": "    return set_hook(fn, PRE_LOAD, many=pass_collection)\n",
+    "entry_point": "pre_load",
+    "base_input": [],
+    "plus_input": [],
+    "atol": 0
+  },
+  "MyDataset/6": {
+    "task_id": "MyDataset/6",
+    "problem_id": "marshmallow.decorators.set_hook",
+    "prompt": "def set_hook(\n    fn: typing.Callable[..., typing.Any] | None,\n    tag: str,\n    *,\n    many: bool = False,\n    **kwargs: typing.Any,\n) -> typing.Callable[..., typing.Any]:\n    \"\"\"Mark decorated function as a hook to be picked up later.\n    You should not need to use this method directly.\n\n    .. note::\n        Currently only works with functions and instance methods. Class and\n        static methods are not supported.\n\n    :return: Decorated function if supplied, else this decorator with its args\n        bound.\n    \"\"\"\n",
+    "canonical_solution": "    if fn is None:\n        return functools.partial(set_hook, tag=tag, many=many, **kwargs)\n\n    # Set a __marshmallow_hook__ attribute instead of wrapping in some class,\n    # because I still want this to end up as a normal (unbound) method.\n    function = typing.cast(\"MarshmallowHook\", fn)\n    try:\n        hook_config = function.__marshmallow_hook__\n    except AttributeError:\n        function.__marshmallow_hook__ = hook_config = defaultdict(list)\n    # Also save the kwargs for the tagged function on\n    # __marshmallow_hook__, keyed by <tag>\n    if hook_config is not None:\n        hook_config[tag].append((many, kwargs))\n\n    return fn\n",
+    "entry_point": "set_hook",
+    "base_input": [],
+    "plus_input": [],
+    "atol": 0
+  },
+  "MyDataset/7": {
+    "task_id": "MyDataset/7",
+    "problem_id": "marshmallow.decorators.validates",
+    "prompt": "def validates(*field_names: str) -> typing.Callable[..., typing.Any]:\n    \"\"\"Register a validator method for field(s).\n\n    :param field_names: Names of the fields that the method validates.\n\n    .. versionchanged:: 4.0.0 Accepts multiple field names as positional arguments.\n    .. versionchanged:: 4.0.0 Decorated methods receive ``data_key`` as a keyword argument.\n    \"\"\"\n",
+    "canonical_solution": "    return set_hook(None, VALIDATES, field_names=field_names)\n",
+    "entry_point": "validates",
+    "base_input": [],
+    "plus_input": [],
+    "atol": 0
+  },
+  "MyDataset/8": {
+    "task_id": "MyDataset/8",
+    "problem_id": "marshmallow.decorators.validates_schema",
+    "prompt": "def validates_schema(\n    fn: typing.Callable[..., typing.Any] | None = None,\n    *,\n    pass_collection: bool = False,\n    pass_original: bool = False,\n    skip_on_field_errors: bool = True,\n) -> typing.Callable[..., typing.Any]:\n    \"\"\"Register a schema-level validator.\n\n    By default it receives a single object at a time, transparently handling the ``many``\n    argument passed to the `Schema <marshmallow.Schema>`'s :func:`~marshmallow.Schema.validate` call.\n    If ``pass_collection=True``, the raw data (which may be a collection) is passed.\n\n    If ``pass_original=True``, the original data (before unmarshalling) will be passed as\n    an additional argument to the method.\n\n    If ``skip_on_field_errors=True``, this validation method will be skipped whenever\n    validation errors have been detected when validating fields.\n\n    .. versionchanged:: 3.0.0b1 ``skip_on_field_errors`` defaults to `True`.\n    .. versionchanged:: 3.0.0 ``partial`` and ``many`` are always passed as keyword arguments to\n        the decorated method.\n    .. versionchanged:: 4.0.0 ``unknown`` is passed as a keyword argument to the decorated method.\n    .. versionchanged:: 4.0.0 ``pass_many`` is renamed to ``pass_collection``.\n    .. versionchanged:: 4.0.0 ``pass_collection``, ``pass_original``, and ``skip_on_field_errors``\n        are keyword-only arguments.\n    \"\"\"\n",
+    "canonical_solution": "    return set_hook(\n        fn,\n        VALIDATES_SCHEMA,\n        many=pass_collection,\n        pass_original=pass_original,\n        skip_on_field_errors=skip_on_field_errors,\n    )\n",
+    "entry_point": "validates_schema",
+    "base_input": [],
+    "plus_input": [],
+    "atol": 0
+  },
+  "MyDataset/9": {
+    "task_id": "MyDataset/9",
+    "problem_id": "marshmallow.error_store.merge_errors",
+    "prompt": "def merge_errors(errors1, errors2):  # noqa: PLR0911\n    \"\"\"Deeply merge two error messages.\n\n    The format of ``errors1`` and ``errors2`` matches the ``message``\n    parameter of :exc:`marshmallow.exceptions.ValidationError`.\n    \"\"\"\n",
+    "canonical_solution": "    if not errors1:\n        return errors2\n    if not errors2:\n        return errors1\n    if isinstance(errors1, list):\n        if isinstance(errors2, list):\n            errors1.extend(errors2)\n            return errors1\n        if isinstance(errors2, dict):\n            errors2[SCHEMA] = merge_errors(errors1, errors2.get(SCHEMA))\n            return errors2\n        errors1.append(errors2)\n        return errors1\n    if isinstance(errors1, dict):\n        if isinstance(errors2, dict):\n            for key, val in errors2.items():\n                if key in errors1:\n                    errors1[key] = merge_errors(errors1[key], val)\n                else:\n                    errors1[key] = val\n            return errors1\n        errors1[SCHEMA] = merge_errors(errors1.get(SCHEMA), errors2)\n        return errors1\n    if isinstance(errors2, list):\n        return [errors1, *errors2]\n    if isinstance(errors2, dict):\n        errors2[SCHEMA] = merge_errors(errors1, errors2.get(SCHEMA))\n        return errors2\n    return [errors1, errors2]\n",
+    "entry_point": "merge_errors",
+    "base_input": [],
+    "plus_input": [],
+    "atol": 0
+  },
+  "MyDataset/10": {
+    "task_id": "MyDataset/10",
+    "problem_id": "marshmallow.schema.Schema.dump",
+    "prompt": "    def dump(self, obj: typing.Any, *, many: bool | None = None):\n        \"\"\"Serialize an object to native Python data types according to this\n        Schema's fields.\n\n        :param obj: The object to serialize.\n        :param many: Whether to serialize `obj` as a collection. If `None`, the value\n            for `self.many` is used.\n        :return: Serialized data\n\n        .. versionchanged:: 3.0.0b7\n            This method returns the serialized data rather than a ``(data, errors)`` tuple.\n            A :exc:`ValidationError <marshmallow.exceptions.ValidationError>` is raised\n            if ``obj`` is invalid.\n        .. versionchanged:: 3.0.0rc9\n            Validation no longer occurs upon serialization.\n        \"\"\"\n",
+    "canonical_solution": "        many = self.many if many is None else bool(many)\n        if self._hooks[PRE_DUMP]:\n            processed_obj = self._invoke_dump_processors(\n                PRE_DUMP, obj, many=many, original_data=obj\n            )\n        else:\n            processed_obj = obj\n\n        result = self._serialize(processed_obj, many=many)\n\n        if self._hooks[POST_DUMP]:\n            result = self._invoke_dump_processors(\n                POST_DUMP, result, many=many, original_data=obj\n            )\n\n        return result\n",
+    "entry_point": "dump",
+    "base_input": [],
+    "plus_input": [],
+    "atol": 0
+  },
+  "MyDataset/11": {
+    "task_id": "MyDataset/11",
+    "problem_id": "marshmallow.schema.Schema.dumps",
+    "prompt": "    def dumps(self, obj: typing.Any, *args, many: bool | None = None, **kwargs):\n        \"\"\"Same as :meth:`dump`, except return a JSON-encoded string.\n\n        :param obj: The object to serialize.\n        :param many: Whether to serialize `obj` as a collection. If `None`, the value\n            for `self.many` is used.\n        :return: A ``json`` string\n\n        .. versionchanged:: 3.0.0b7\n            This method returns the serialized data rather than a ``(data, errors)`` tuple.\n            A :exc:`ValidationError <marshmallow.exceptions.ValidationError>` is raised\n            if ``obj`` is invalid.\n        \"\"\"\n",
+    "canonical_solution": "        serialized = self.dump(obj, many=many)\n        return self.opts.render_module.dumps(serialized, *args, **kwargs)\n",
+    "entry_point": "dumps",
+    "base_input": [],
+    "plus_input": [],
+    "atol": 0
+  },
+  "MyDataset/12": {
+    "task_id": "MyDataset/12",
+    "problem_id": "marshmallow.schema.Schema.from_dict",
+    "prompt": "    def from_dict(\n        cls,\n        fields: dict[str, Field],\n        *,\n        name: str = \"GeneratedSchema\",\n    ) -> type[Schema]:\n        \"\"\"Generate a `Schema <marshmallow.Schema>` class given a dictionary of fields.\n\n        .. code-block:: python\n\n            from marshmallow import Schema, fields\n\n            PersonSchema = Schema.from_dict({\"name\": fields.Str()})\n            print(PersonSchema().load({\"name\": \"David\"}))  # => {'name': 'David'}\n\n        Generated schemas are not added to the class registry and therefore cannot\n        be referred to by name in `Nested` fields.\n\n\n        :param fields: Dictionary mapping field names to field instances.\n        :param name: Optional name for the class, which will appear in\n            the ``repr`` for the class.\n\n        .. versionadded:: 3.0.0\n        \"\"\"\n",
+    "canonical_solution": "        Meta = type(\n            \"GeneratedMeta\", (getattr(cls, \"Meta\", object),), {\"register\": False}\n        )\n        return type(name, (cls,), {**fields.copy(), \"Meta\": Meta})\n",
+    "entry_point": "from_dict",
+    "base_input": [],
+    "plus_input": [],
+    "atol": 0
+  },
+  "MyDataset/13": {
+    "task_id": "MyDataset/13",
+    "problem_id": "marshmallow.schema.Schema.get_attribute",
+    "prompt": "    def get_attribute(self, obj: typing.Any, attr: str, default: typing.Any):\n        \"\"\"Defines how to pull values from an object to serialize.\n\n        .. versionchanged:: 3.0.0a1\n            Changed position of ``obj`` and ``attr``.\n        \"\"\"\n",
+    "canonical_solution": "        return get_value(obj, attr, default)\n",
+    "entry_point": "get_attribute",
+    "base_input": [],
+    "plus_input": [],
+    "atol": 0
+  },
+  "MyDataset/14": {
+    "task_id": "MyDataset/14",
+    "problem_id": "marshmallow.schema.Schema.handle_error",
+    "prompt": "    def handle_error(\n        self, error: ValidationError, data: typing.Any, *, many: bool, **kwargs\n    ):\n        \"\"\"Custom error handler function for the schema.\n\n        :param error: The `ValidationError` raised during (de)serialization.\n        :param data: The original input data.\n        :param many: Value of ``many`` on dump or load.\n        :param partial: Value of ``partial`` on load.\n\n        .. versionchanged:: 3.0.0rc9\n            Receives `many` and `partial` (on deserialization) as keyword arguments.\n        \"\"\"\n",
+    "canonical_solution": "        \"\"\"Custom error handler function for the schema.\n\n        :param error: The `ValidationError` raised during (de)serialization.\n        :param data: The original input data.\n        :param many: Value of ``many`` on dump or load.\n        :param partial: Value of ``partial`` on load.\n\n        .. versionchanged:: 3.0.0rc9\n            Receives `many` and `partial` (on deserialization) as keyword arguments.\n        \"\"\"\n",
+    "entry_point": "handle_error",
+    "base_input": [],
+    "plus_input": [],
+    "atol": 0
+  },
+  "MyDataset/15": {
+    "task_id": "MyDataset/15",
+    "problem_id": "marshmallow.schema.Schema.load",
+    "prompt": "    def load(\n        self,\n        data: Mapping[str, typing.Any] | Sequence[Mapping[str, typing.Any]],\n        *,\n        many: bool | None = None,\n        partial: bool | types.StrSequenceOrSet | None = None,\n        unknown: types.UnknownOption | None = None,\n    ):\n        \"\"\"Deserialize a data structure to an object defined by this Schema's fields.\n\n        :param data: The data to deserialize.\n        :param many: Whether to deserialize `data` as a collection. If `None`, the\n            value for `self.many` is used.\n        :param partial: Whether to ignore missing fields and not require\n            any fields declared. Propagates down to ``Nested`` fields as well. If\n            its value is an iterable, only missing fields listed in that iterable\n            will be ignored. Use dot delimiters to specify nested fields.\n        :param unknown: Whether to exclude, include, or raise an error for unknown\n            fields in the data. Use `EXCLUDE`, `INCLUDE` or `RAISE`.\n            If `None`, the value for `self.unknown` is used.\n        :return: Deserialized data\n\n        .. versionchanged:: 3.0.0b7\n            This method returns the deserialized data rather than a ``(data, errors)`` tuple.\n            A :exc:`ValidationError <marshmallow.exceptions.ValidationError>` is raised\n            if invalid data are passed.\n        \"\"\"\n",
+    "canonical_solution": "        return self._do_load(\n            data, many=many, partial=partial, unknown=unknown, postprocess=True\n        )\n",
+    "entry_point": "load",
+    "base_input": [],
+    "plus_input": [],
+    "atol": 0
+  },
+  "MyDataset/16": {
+    "task_id": "MyDataset/16",
+    "problem_id": "marshmallow.schema.Schema.loads",
+    "prompt": "    def loads(\n        self,\n        s: str | bytes | bytearray,\n        /,\n        *,\n        many: bool | None = None,\n        partial: bool | types.StrSequenceOrSet | None = None,\n        unknown: types.UnknownOption | None = None,\n        **kwargs,\n    ):\n        \"\"\"Same as :meth:`load`, except it uses `marshmallow.Schema.Meta.render_module` to deserialize\n        the passed string before passing data to :meth:`load`.\n\n        :param s: A string of the data to deserialize.\n        :param many: Whether to deserialize `obj` as a collection. If `None`, the\n            value for `self.many` is used.\n        :param partial: Whether to ignore missing fields and not require\n            any fields declared. Propagates down to ``Nested`` fields as well. If\n            its value is an iterable, only missing fields listed in that iterable\n            will be ignored. Use dot delimiters to specify nested fields.\n        :param unknown: Whether to exclude, include, or raise an error for unknown\n            fields in the data. Use `EXCLUDE`, `INCLUDE` or `RAISE`.\n            If `None`, the value for `self.unknown` is used.\n        :return: Deserialized data\n\n        .. versionchanged:: 3.0.0b7\n            This method returns the deserialized data rather than a ``(data, errors)`` tuple.\n            A :exc:`ValidationError <marshmallow.exceptions.ValidationError>` is raised\n            if invalid data are passed.\n        .. versionchanged:: 4.0.0\n            Rename ``json_module`` parameter to ``s``.\n        \"\"\"\n",
+    "canonical_solution": "        data = self.opts.render_module.loads(s, **kwargs)\n        return self.load(data, many=many, partial=partial, unknown=unknown)\n",
+    "entry_point": "loads",
+    "base_input": [],
+    "plus_input": [],
+    "atol": 0
+  },
+  "MyDataset/17": {
+    "task_id": "MyDataset/17",
+    "problem_id": "marshmallow.schema.Schema.on_bind_field",
+    "prompt": "    def on_bind_field(self, field_name: str, field_obj: Field) -> None:\n        \"\"\"Hook to modify a field when it is bound to the `Schema <marshmallow.Schema>`.\n\n        No-op by default.\n        \"\"\"\n",
+    "canonical_solution": "        return\n",
+    "entry_point": "on_bind_field",
+    "base_input": [],
+    "plus_input": [],
+    "atol": 0
+  },
+  "MyDataset/18": {
+    "task_id": "MyDataset/18",
+    "problem_id": "marshmallow.schema.Schema.validate",
+    "prompt": "    def validate(\n        self,\n        data: Mapping[str, typing.Any] | Sequence[Mapping[str, typing.Any]],\n        *,\n        many: bool | None = None,\n        partial: bool | types.StrSequenceOrSet | None = None,\n    ) -> dict[str, list[str]]:\n        \"\"\"Validate `data` against the schema, returning a dictionary of\n        validation errors.\n\n        :param data: The data to validate.\n        :param many: Whether to validate `data` as a collection. If `None`, the\n            value for `self.many` is used.\n        :param partial: Whether to ignore missing fields and not require\n            any fields declared. Propagates down to ``Nested`` fields as well. If\n            its value is an iterable, only missing fields listed in that iterable\n            will be ignored. Use dot delimiters to specify nested fields.\n        :return: A dictionary of validation errors.\n        \"\"\"\n",
+    "canonical_solution": "        try:\n            self._do_load(data, many=many, partial=partial, postprocess=False)\n        except ValidationError as exc:\n            return typing.cast(\"dict[str, list[str]]\", exc.messages)\n        return {}\n",
+    "entry_point": "validate",
+    "base_input": [],
+    "plus_input": [],
+    "atol": 0
+  },
+  "MyDataset/19": {
+    "task_id": "MyDataset/19",
+    "problem_id": "marshmallow.utils.callable_or_raise",
+    "prompt": "def callable_or_raise(obj):\n    \"\"\"Check that an object is callable, else raise a :exc:`TypeError`.\"\"\"\n",
+    "canonical_solution": "    if not callable(obj):\n        raise TypeError(f\"Object {obj!r} is not callable.\")\n    return obj\n",
+    "entry_point": "callable_or_raise",
+    "base_input": [],
+    "plus_input": [],
+    "atol": 0
+  },
+  "MyDataset/20": {
+    "task_id": "MyDataset/20",
+    "problem_id": "marshmallow.utils.get_value",
+    "prompt": "def get_value(obj, key: int | str, default=missing):\n    \"\"\"Helper for pulling a keyed value off various types of objects. Fields use\n    this method by default to access attributes of the source object. For object `x`\n    and attribute `i`, this method first tries to access `x[i]`, and then falls back to\n    `x.i` if an exception is raised.\n\n    .. warning::\n        If an object `x` does not raise an exception when `x[i]` does not exist,\n        `get_value` will never check the value `x.i`. Consider overriding\n        `marshmallow.fields.Field.get_value` in this case.\n    \"\"\"\n",
+    "canonical_solution": "    if not isinstance(key, int) and \".\" in key:\n        return _get_value_for_keys(obj, key.split(\".\"), default)\n    return _get_value_for_key(obj, key, default)\n",
+    "entry_point": "get_value",
+    "base_input": [],
+    "plus_input": [],
+    "atol": 0
+  },
+  "MyDataset/21": {
+    "task_id": "MyDataset/21",
+    "problem_id": "marshmallow.utils.is_collection",
+    "prompt": "def is_collection(obj) -> typing.TypeGuard[typing.Iterable]:\n    \"\"\"Return True if ``obj`` is a collection type, e.g list, tuple, queryset.\"\"\"\n",
+    "canonical_solution": "    return is_iterable_but_not_string(obj) and not isinstance(obj, Mapping)\n",
+    "entry_point": "is_collection",
+    "base_input": [],
+    "plus_input": [],
+    "atol": 0
+  },
+  "MyDataset/22": {
+    "task_id": "MyDataset/22",
+    "problem_id": "marshmallow.utils.is_generator",
+    "prompt": "def is_generator(obj) -> typing.TypeGuard[typing.Generator]:\n    \"\"\"Return True if ``obj`` is a generator\"\"\"\n",
+    "canonical_solution": "    return inspect.isgeneratorfunction(obj) or inspect.isgenerator(obj)\n",
+    "entry_point": "is_generator",
+    "base_input": [],
+    "plus_input": [],
+    "atol": 0
+  },
+  "MyDataset/23": {
+    "task_id": "MyDataset/23",
+    "problem_id": "marshmallow.utils.is_iterable_but_not_string",
+    "prompt": "def is_iterable_but_not_string(obj) -> typing.TypeGuard[typing.Iterable]:\n    \"\"\"Return True if ``obj`` is an iterable object that isn't a string.\"\"\"\n",
+    "canonical_solution": "    return (hasattr(obj, \"__iter__\") and not hasattr(obj, \"strip\")) or is_generator(obj)\n",
+    "entry_point": "is_iterable_but_not_string",
+    "base_input": [],
+    "plus_input": [],
+    "atol": 0
+  },
+  "MyDataset/24": {
+    "task_id": "MyDataset/24",
+    "problem_id": "marshmallow.utils.is_sequence_but_not_string",
+    "prompt": "def is_sequence_but_not_string(obj) -> typing.TypeGuard[Sequence]:\n    \"\"\"Return True if ``obj`` is a sequence that isn't a string.\"\"\"\n",
+    "canonical_solution": "    return isinstance(obj, Sequence) and not isinstance(obj, (str, bytes))\n",
+    "entry_point": "is_sequence_but_not_string",
+    "base_input": [],
+    "plus_input": [],
+    "atol": 0
+  },
+  "MyDataset/25": {
+    "task_id": "MyDataset/25",
+    "problem_id": "marshmallow.utils.pluck",
+    "prompt": "def pluck(dictlist: list[dict[str, typing.Any]], key: str):\n    \"\"\"Extracts a list of dictionary values from a list of dictionaries.\n    ::\n\n        >>> dlist = [{'id': 1, 'name': 'foo'}, {'id': 2, 'name': 'bar'}]\n        >>> pluck(dlist, 'id')\n        [1, 2]\n    \"\"\"\n",
+    "canonical_solution": "    return [d[key] for d in dictlist]\n",
+    "entry_point": "pluck",
+    "base_input": [],
+    "plus_input": [],
+    "atol": 0
+  },
+  "MyDataset/26": {
+    "task_id": "MyDataset/26",
+    "problem_id": "marshmallow.utils.set_value",
+    "prompt": "def set_value(dct: dict[str, typing.Any], key: str, value: typing.Any):\n    \"\"\"Set a value in a dict. If `key` contains a '.', it is assumed\n    be a path (i.e. dot-delimited string) to the value's location.\n\n    ::\n\n        >>> d = {}\n        >>> set_value(d, 'foo.bar', 42)\n        >>> d\n        {'foo': {'bar': 42}}\n    \"\"\"\n",
+    "canonical_solution": "    if \".\" in key:\n        head, rest = key.split(\".\", 1)\n        target = dct.setdefault(head, {})\n        if not isinstance(target, dict):\n            raise ValueError(\n                f\"Cannot set {key} in {head} due to existing value: {target}\"\n            )\n        set_value(target, rest, value)\n    else:\n        dct[key] = value\n",
+    "entry_point": "set_value",
+    "base_input": [],
+    "plus_input": [],
+    "atol": 0
+  },
+  "MyDataset/27": {
+    "task_id": "MyDataset/27",
+    "problem_id": "marshmallow.utils.timedelta_to_microseconds",
+    "prompt": "def timedelta_to_microseconds(value: dt.timedelta) -> int:\n    \"\"\"Compute the total microseconds of a timedelta.\n\n    https://github.com/python/cpython/blob/v3.13.1/Lib/_pydatetime.py#L805-L807\n    \"\"\"\n",
+    "canonical_solution": "    return (value.days * (24 * 3600) + value.seconds) * 1000000 + value.microseconds\n",
+    "entry_point": "timedelta_to_microseconds",
+    "base_input": [],
+    "plus_input": [],
+    "atol": 0
+  }
+}

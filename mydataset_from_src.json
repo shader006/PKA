@@ -1,0 +1,200 @@
+{
+  "MyDataset/0": {
+    "task_id": "MyDataset/0",
+    "prompt": "def register(classname: str, cls: SchemaType) -> None:\n    \"\"\"Add a class to the registry of serializer classes. When a class is\n    registered, an entry for both its classname and its full, module-qualified\n    path are added to the registry.\n\n    Example: ::\n\n        class MyClass:\n            pass\n\n\n        register(\"MyClass\", MyClass)\n        # Registry:\n        # {\n        #   'MyClass': [path.to.MyClass],\n        #   'path.to.MyClass': [path.to.MyClass],\n        # }\n\n    \"\"\"\n",
+    "canonical_solution": "    module = cls.__module__\n    # Full module path to the class\n    # e.g. user.schemas.UserSchema\n    fullpath = f\"{module}.{classname}\"\n    # If the class is already registered; need to check if the entries are\n    # in the same module as cls to avoid having multiple instances of the same\n    # class in the registry\n    if classname in _registry and not any(\n        each.__module__ == module for each in _registry[classname]\n    ):\n        _registry[classname].append(cls)\n    elif classname not in _registry:\n        _registry[classname] = [cls]\n\n    # Also register the full path\n    if fullpath not in _registry:\n        _registry.setdefault(fullpath, []).append(cls)\n    else:\n        # If fullpath does exist, replace existing entry\n        _registry[fullpath] = [cls]\n",
+    "entry_point": "register",
+    "base_input": [],
+    "plus_input": [],
+    "atol": 0
+  },
+  "MyDataset/1": {
+    "task_id": "MyDataset/1",
+    "prompt": "def get_class(classname: str, *, all: bool = False) -> list[SchemaType] | SchemaType:  # noqa: A002\n    \"\"\"Retrieve a class from the registry.\n\n    :raises: `marshmallow.exceptions.RegistryError` if the class cannot be found\n        or if there are multiple entries for the given class name.\n    \"\"\"\n",
+    "canonical_solution": "    try:\n        classes = _registry[classname]\n    except KeyError as error:\n        raise RegistryError(\n            f\"Class with name {classname!r} was not found. You may need \"\n            \"to import the class.\"\n        ) from error\n    if len(classes) > 1:\n        if all:\n            return _registry[classname]\n        raise RegistryError(\n            f\"Multiple classes with name {classname!r} \"\n            \"were found. Please use the full, \"\n            \"module-qualified path.\"\n        )\n    return _registry[classname][0]\n",
+    "entry_point": "get_class",
+    "base_input": [],
+    "plus_input": [],
+    "atol": 0
+  },
+  "MyDataset/2": {
+    "task_id": "MyDataset/2",
+    "prompt": "def validates(*field_names: str) -> typing.Callable[..., typing.Any]:\n    \"\"\"Register a validator method for field(s).\n\n    :param field_names: Names of the fields that the method validates.\n\n    .. versionchanged:: 4.0.0 Accepts multiple field names as positional arguments.\n    .. versionchanged:: 4.0.0 Decorated methods receive ``data_key`` as a keyword argument.\n    \"\"\"\n",
+    "canonical_solution": "    return set_hook(None, VALIDATES, field_names=field_names)\n",
+    "entry_point": "validates",
+    "base_input": [],
+    "plus_input": [],
+    "atol": 0
+  },
+  "MyDataset/3": {
+    "task_id": "MyDataset/3",
+    "prompt": "def validates_schema(\n    fn: typing.Callable[..., typing.Any] | None = None,\n    *,\n    pass_collection: bool = False,\n    pass_original: bool = False,\n    skip_on_field_errors: bool = True,\n) -> typing.Callable[..., typing.Any]:\n    \"\"\"Register a schema-level validator.\n\n    By default it receives a single object at a time, transparently handling the ``many``\n    argument passed to the `Schema <marshmallow.Schema>`'s :func:`~marshmallow.Schema.validate` call.\n    If ``pass_collection=True``, the raw data (which may be a collection) is passed.\n\n    If ``pass_original=True``, the original data (before unmarshalling) will be passed as\n    an additional argument to the method.\n\n    If ``skip_on_field_errors=True``, this validation method will be skipped whenever\n    validation errors have been detected when validating fields.\n\n    .. versionchanged:: 3.0.0b1 ``skip_on_field_errors`` defaults to `True`.\n    .. versionchanged:: 3.0.0 ``partial`` and ``many`` are always passed as keyword arguments to\n        the decorated method.\n    .. versionchanged:: 4.0.0 ``unknown`` is passed as a keyword argument to the decorated method.\n    .. versionchanged:: 4.0.0 ``pass_many`` is renamed to ``pass_collection``.\n    .. versionchanged:: 4.0.0 ``pass_collection``, ``pass_original``, and ``skip_on_field_errors``\n        are keyword-only arguments.\n    \"\"\"\n",
+    "canonical_solution": "    return set_hook(\n        fn,\n        VALIDATES_SCHEMA,\n        many=pass_collection,\n        pass_original=pass_original,\n        skip_on_field_errors=skip_on_field_errors,\n    )\n",
+    "entry_point": "validates_schema",
+    "base_input": [],
+    "plus_input": [],
+    "atol": 0
+  },
+  "MyDataset/4": {
+    "task_id": "MyDataset/4",
+    "prompt": "def pre_dump(\n    fn: typing.Callable[..., typing.Any] | None = None,\n    *,\n    pass_collection: bool = False,\n) -> typing.Callable[..., typing.Any]:\n    \"\"\"Register a method to invoke before serializing an object. The method\n    receives the object to be serialized and returns the processed object.\n\n    By default it receives a single object at a time, transparently handling the ``many``\n    argument passed to the `Schema <marshmallow.Schema>`'s :func:`~marshmallow.Schema.dump` call.\n    If ``pass_collection=True``, the raw data (which may be a collection) is passed.\n\n    .. versionchanged:: 3.0.0 ``many`` is always passed as a keyword arguments to the decorated method.\n    .. versionchanged:: 4.0.0 ``pass_many`` is renamed to ``pass_collection``.\n    .. versionchanged:: 4.0.0 ``pass_collection`` is a keyword-only argument.\n    \"\"\"\n",
+    "canonical_solution": "    return set_hook(fn, PRE_DUMP, many=pass_collection)\n",
+    "entry_point": "pre_dump",
+    "base_input": [],
+    "plus_input": [],
+    "atol": 0
+  },
+  "MyDataset/5": {
+    "task_id": "MyDataset/5",
+    "prompt": "def post_dump(\n    fn: typing.Callable[..., typing.Any] | None = None,\n    *,\n    pass_collection: bool = False,\n    pass_original: bool = False,\n) -> typing.Callable[..., typing.Any]:\n    \"\"\"Register a method to invoke after serializing an object. The method\n    receives the serialized object and returns the processed object.\n\n    By default it receives a single object at a time, transparently handling the ``many``\n    argument passed to the `Schema <marshmallow.Schema>`'s :func:`~marshmallow.Schema.dump` call.\n    If ``pass_collection=True``, the raw data (which may be a collection) is passed.\n\n    If ``pass_original=True``, the original data (before serializing) will be passed as\n    an additional argument to the method.\n\n    .. versionchanged:: 3.0.0 ``many`` is always passed as a keyword arguments to the decorated method.\n    .. versionchanged:: 4.0.0 ``pass_many`` is renamed to ``pass_collection``.\n    .. versionchanged:: 4.0.0 ``pass_collection`` and ``pass_original`` are keyword-only arguments.\n    \"\"\"\n",
+    "canonical_solution": "    return set_hook(fn, POST_DUMP, many=pass_collection, pass_original=pass_original)\n",
+    "entry_point": "post_dump",
+    "base_input": [],
+    "plus_input": [],
+    "atol": 0
+  },
+  "MyDataset/6": {
+    "task_id": "MyDataset/6",
+    "prompt": "def pre_load(\n    fn: typing.Callable[..., typing.Any] | None = None,\n    *,\n    pass_collection: bool = False,\n) -> typing.Callable[..., typing.Any]:\n    \"\"\"Register a method to invoke before deserializing an object. The method\n    receives the data to be deserialized and returns the processed data.\n\n    By default it receives a single object at a time, transparently handling the ``many``\n    argument passed to the `Schema <marshmallow.Schema>`'s :func:`~marshmallow.Schema.load` call.\n    If ``pass_collection=True``, the raw data (which may be a collection) is passed.\n\n    .. versionchanged:: 3.0.0 ``partial`` and ``many`` are always passed as keyword arguments to\n        the decorated method.\n    .. versionchanged:: 4.0.0 ``pass_many`` is renamed to ``pass_collection``.\n    .. versionchanged:: 4.0.0 ``pass_collection`` is a keyword-only argument.\n    .. versionchanged:: 4.0.0 ``unknown`` is passed as a keyword argument to the decorated method.\n    \"\"\"\n",
+    "canonical_solution": "    return set_hook(fn, PRE_LOAD, many=pass_collection)\n",
+    "entry_point": "pre_load",
+    "base_input": [],
+    "plus_input": [],
+    "atol": 0
+  },
+  "MyDataset/7": {
+    "task_id": "MyDataset/7",
+    "prompt": "def post_load(\n    fn: typing.Callable[..., typing.Any] | None = None,\n    *,\n    pass_collection: bool = False,\n    pass_original: bool = False,\n) -> typing.Callable[..., typing.Any]:\n    \"\"\"Register a method to invoke after deserializing an object. The method\n    receives the deserialized data and returns the processed data.\n\n    By default it receives a single object at a time, transparently handling the ``many``\n    argument passed to the `Schema <marshmallow.Schema>`'s :func:`~marshmallow.Schema.load` call.\n    If ``pass_collection=True``, the raw data (which may be a collection) is passed.\n\n    If ``pass_original=True``, the original data (before deserializing) will be passed as\n    an additional argument to the method.\n\n    .. versionchanged:: 3.0.0 ``partial`` and ``many`` are always passed as keyword arguments to\n        the decorated method.\n    .. versionchanged:: 4.0.0 ``pass_many`` is renamed to ``pass_collection``.\n    .. versionchanged:: 4.0.0 ``pass_collection`` and ``pass_original`` are keyword-only arguments.\n    .. versionchanged:: 4.0.0 ``unknown`` is passed as a keyword argument to the decorated method.\n    \"\"\"\n",
+    "canonical_solution": "    return set_hook(fn, POST_LOAD, many=pass_collection, pass_original=pass_original)\n",
+    "entry_point": "post_load",
+    "base_input": [],
+    "plus_input": [],
+    "atol": 0
+  },
+  "MyDataset/8": {
+    "task_id": "MyDataset/8",
+    "prompt": "def set_hook(\n    fn: typing.Callable[..., typing.Any] | None,\n    tag: str,\n    *,\n    many: bool = False,\n    **kwargs: typing.Any,\n) -> typing.Callable[..., typing.Any]:\n    \"\"\"Mark decorated function as a hook to be picked up later.\n    You should not need to use this method directly.\n\n    .. note::\n        Currently only works with functions and instance methods. Class and\n        static methods are not supported.\n\n    :return: Decorated function if supplied, else this decorator with its args\n        bound.\n    \"\"\"\n",
+    "canonical_solution": "    if fn is None:\n        return functools.partial(set_hook, tag=tag, many=many, **kwargs)\n\n    # Set a __marshmallow_hook__ attribute instead of wrapping in some class,\n    # because I still want this to end up as a normal (unbound) method.\n    function = typing.cast(\"MarshmallowHook\", fn)\n    try:\n        hook_config = function.__marshmallow_hook__\n    except AttributeError:\n        function.__marshmallow_hook__ = hook_config = defaultdict(list)\n    # Also save the kwargs for the tagged function on\n    # __marshmallow_hook__, keyed by <tag>\n    if hook_config is not None:\n        hook_config[tag].append((many, kwargs))\n\n    return fn\n",
+    "entry_point": "set_hook",
+    "base_input": [],
+    "plus_input": [],
+    "atol": 0
+  },
+  "MyDataset/9": {
+    "task_id": "MyDataset/9",
+    "prompt": "def merge_errors(errors1, errors2):  # noqa: PLR0911\n    \"\"\"Deeply merge two error messages.\n\n    The format of ``errors1`` and ``errors2`` matches the ``message``\n    parameter of :exc:`marshmallow.exceptions.ValidationError`.\n    \"\"\"\n",
+    "canonical_solution": "    if not errors1:\n        return errors2\n    if not errors2:\n        return errors1\n    if isinstance(errors1, list):\n        if isinstance(errors2, list):\n            errors1.extend(errors2)\n            return errors1\n        if isinstance(errors2, dict):\n            errors2[SCHEMA] = merge_errors(errors1, errors2.get(SCHEMA))\n            return errors2\n        errors1.append(errors2)\n        return errors1\n    if isinstance(errors1, dict):\n        if isinstance(errors2, dict):\n            for key, val in errors2.items():\n                if key in errors1:\n                    errors1[key] = merge_errors(errors1[key], val)\n                else:\n                    errors1[key] = val\n            return errors1\n        errors1[SCHEMA] = merge_errors(errors1.get(SCHEMA), errors2)\n        return errors1\n    if isinstance(errors2, list):\n        return [errors1, *errors2]\n    if isinstance(errors2, dict):\n        errors2[SCHEMA] = merge_errors(errors1, errors2.get(SCHEMA))\n        return errors2\n    return [errors1, errors2]\n",
+    "entry_point": "merge_errors",
+    "base_input": [],
+    "plus_input": [],
+    "atol": 0
+  },
+  "MyDataset/10": {
+    "task_id": "MyDataset/10",
+    "prompt": "def _resolve_field_instance(cls_or_instance: Field | type[Field]) -> Field:\n    \"\"\"Return a Field instance from a Field class or instance.\n\n    :param cls_or_instance: Field class or instance.\n    \"\"\"\n",
+    "canonical_solution": "    if isinstance(cls_or_instance, type):\n        if not issubclass(cls_or_instance, Field):\n            raise _FieldInstanceResolutionError\n        return cls_or_instance()\n    if not isinstance(cls_or_instance, Field):\n        raise _FieldInstanceResolutionError\n    return cls_or_instance\n",
+    "entry_point": "_resolve_field_instance",
+    "base_input": [],
+    "plus_input": [],
+    "atol": 0
+  },
+  "MyDataset/11": {
+    "task_id": "MyDataset/11",
+    "prompt": "def _get_fields(attrs) -> list[tuple[str, Field]]:\n    \"\"\"Get fields from a class\n\n    :param attrs: Mapping of class attributes\n    \"\"\"\n",
+    "canonical_solution": "    ret = []\n    for field_name, field_value in attrs.items():\n        if isinstance(field_value, type) and issubclass(field_value, ma_fields.Field):\n            raise TypeError(\n                f'Field for \"{field_name}\" must be declared as a '\n                \"Field instance, not a class. \"\n                f'Did you mean \"fields.{field_value.__name__}()\"?'\n            )\n        if isinstance(field_value, ma_fields.Field):\n            ret.append((field_name, field_value))\n    return ret\n",
+    "entry_point": "_get_fields",
+    "base_input": [],
+    "plus_input": [],
+    "atol": 0
+  },
+  "MyDataset/12": {
+    "task_id": "MyDataset/12",
+    "prompt": "def _get_fields_by_mro(klass: SchemaMeta):\n    \"\"\"Collect fields from a class, following its method resolution order. The\n    class itself is excluded from the search; only its parents are checked. Get\n    fields from ``_declared_fields`` if available, else use ``__dict__``.\n\n    :param klass: Class whose fields to retrieve\n    \"\"\"\n",
+    "canonical_solution": "    mro = inspect.getmro(klass)\n    # Combine fields from all parents\n    # functools.reduce(operator.iadd, list_of_lists) is faster than sum(list_of_lists, [])\n    # Loop over mro in reverse to maintain correct order of fields\n    return functools.reduce(\n        operator.iadd,\n        (\n            _get_fields(\n                getattr(base, \"_declared_fields\", base.__dict__),\n            )\n            for base in mro[:0:-1]\n        ),\n        [],\n    )\n",
+    "entry_point": "_get_fields_by_mro",
+    "base_input": [],
+    "plus_input": [],
+    "atol": 0
+  },
+  "MyDataset/13": {
+    "task_id": "MyDataset/13",
+    "prompt": "def is_generator(obj) -> typing.TypeGuard[typing.Generator]:\n    \"\"\"Return True if ``obj`` is a generator\"\"\"\n",
+    "canonical_solution": "    return inspect.isgeneratorfunction(obj) or inspect.isgenerator(obj)\n",
+    "entry_point": "is_generator",
+    "base_input": [],
+    "plus_input": [],
+    "atol": 0
+  },
+  "MyDataset/14": {
+    "task_id": "MyDataset/14",
+    "prompt": "def is_iterable_but_not_string(obj) -> typing.TypeGuard[typing.Iterable]:\n    \"\"\"Return True if ``obj`` is an iterable object that isn't a string.\"\"\"\n",
+    "canonical_solution": "    return (hasattr(obj, \"__iter__\") and not hasattr(obj, \"strip\")) or is_generator(obj)\n",
+    "entry_point": "is_iterable_but_not_string",
+    "base_input": [],
+    "plus_input": [],
+    "atol": 0
+  },
+  "MyDataset/15": {
+    "task_id": "MyDataset/15",
+    "prompt": "def is_sequence_but_not_string(obj) -> typing.TypeGuard[Sequence]:\n    \"\"\"Return True if ``obj`` is a sequence that isn't a string.\"\"\"\n",
+    "canonical_solution": "    return isinstance(obj, Sequence) and not isinstance(obj, (str, bytes))\n",
+    "entry_point": "is_sequence_but_not_string",
+    "base_input": [],
+    "plus_input": [],
+    "atol": 0
+  },
+  "MyDataset/16": {
+    "task_id": "MyDataset/16",
+    "prompt": "def is_collection(obj) -> typing.TypeGuard[typing.Iterable]:\n    \"\"\"Return True if ``obj`` is a collection type, e.g list, tuple, queryset.\"\"\"\n",
+    "canonical_solution": "    return is_iterable_but_not_string(obj) and not isinstance(obj, Mapping)\n",
+    "entry_point": "is_collection",
+    "base_input": [],
+    "plus_input": [],
+    "atol": 0
+  },
+  "MyDataset/17": {
+    "task_id": "MyDataset/17",
+    "prompt": "def pluck(dictlist: list[dict[str, typing.Any]], key: str):\n    \"\"\"Extracts a list of dictionary values from a list of dictionaries.\n    ::\n\n        >>> dlist = [{'id': 1, 'name': 'foo'}, {'id': 2, 'name': 'bar'}]\n        >>> pluck(dlist, 'id')\n        [1, 2]\n    \"\"\"\n",
+    "canonical_solution": "    return [d[key] for d in dictlist]\n",
+    "entry_point": "pluck",
+    "base_input": [],
+    "plus_input": [],
+    "atol": 0
+  },
+  "MyDataset/18": {
+    "task_id": "MyDataset/18",
+    "prompt": "def get_value(obj, key: int | str, default=missing):\n    \"\"\"Helper for pulling a keyed value off various types of objects. Fields use\n    this method by default to access attributes of the source object. For object `x`\n    and attribute `i`, this method first tries to access `x[i]`, and then falls back to\n    `x.i` if an exception is raised.\n\n    .. warning::\n        If an object `x` does not raise an exception when `x[i]` does not exist,\n        `get_value` will never check the value `x.i`. Consider overriding\n        `marshmallow.fields.Field.get_value` in this case.\n    \"\"\"\n",
+    "canonical_solution": "    if not isinstance(key, int) and \".\" in key:\n        return _get_value_for_keys(obj, key.split(\".\"), default)\n    return _get_value_for_key(obj, key, default)\n",
+    "entry_point": "get_value",
+    "base_input": [],
+    "plus_input": [],
+    "atol": 0
+  },
+  "MyDataset/19": {
+    "task_id": "MyDataset/19",
+    "prompt": "def set_value(dct: dict[str, typing.Any], key: str, value: typing.Any):\n    \"\"\"Set a value in a dict. If `key` contains a '.', it is assumed\n    be a path (i.e. dot-delimited string) to the value's location.\n\n    ::\n\n        >>> d = {}\n        >>> set_value(d, 'foo.bar', 42)\n        >>> d\n        {'foo': {'bar': 42}}\n    \"\"\"\n",
+    "canonical_solution": "    if \".\" in key:\n        head, rest = key.split(\".\", 1)\n        target = dct.setdefault(head, {})\n        if not isinstance(target, dict):\n            raise ValueError(\n                f\"Cannot set {key} in {head} due to existing value: {target}\"\n            )\n        set_value(target, rest, value)\n    else:\n        dct[key] = value\n",
+    "entry_point": "set_value",
+    "base_input": [],
+    "plus_input": [],
+    "atol": 0
+  },
+  "MyDataset/20": {
+    "task_id": "MyDataset/20",
+    "prompt": "def callable_or_raise(obj):\n    \"\"\"Check that an object is callable, else raise a :exc:`TypeError`.\"\"\"\n",
+    "canonical_solution": "    if not callable(obj):\n        raise TypeError(f\"Object {obj!r} is not callable.\")\n    return obj\n",
+    "entry_point": "callable_or_raise",
+    "base_input": [],
+    "plus_input": [],
+    "atol": 0
+  },
+  "MyDataset/21": {
+    "task_id": "MyDataset/21",
+    "prompt": "def timedelta_to_microseconds(value: dt.timedelta) -> int:\n    \"\"\"Compute the total microseconds of a timedelta.\n\n    https://github.com/python/cpython/blob/v3.13.1/Lib/_pydatetime.py#L805-L807\n    \"\"\"\n",
+    "canonical_solution": "    return (value.days * (24 * 3600) + value.seconds) * 1000000 + value.microseconds\n",
+    "entry_point": "timedelta_to_microseconds",
+    "base_input": [],
+    "plus_input": [],
+    "atol": 0
+  }
+}

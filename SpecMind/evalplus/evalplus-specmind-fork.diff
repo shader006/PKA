@@ -1,0 +1,718 @@
+diff --git a/evalplus/eval/__init__.py b/evalplus/eval/__init__.py
+index 188abe0..5e794fb 100644
+--- a/evalplus/eval/__init__.py
++++ b/evalplus/eval/__init__.py
+@@ -4,6 +4,9 @@ import multiprocessing
+ import time
+ from multiprocessing import Array, Value
+ from typing import Any, Dict, List, Tuple, Union
++from multiprocessing import Queue
++import queue
++import traceback
+ 
+ import numpy as np
+ 
+@@ -14,7 +17,12 @@ from evalplus.eval.utils import (
+     swallow_io,
+     time_limit,
+ )
++import hashlib
+ 
++def hash_output(output):
++    hasher = hashlib.sha256()
++    hasher.update(str(output).encode())
++    return hasher.hexdigest()
+ 
+ def compatible_eval_result(results: Dict) -> Dict:
+     # compatibility
+@@ -65,6 +73,7 @@ def construct_inputs_sig(inputs: list) -> str:
+ 
+ 
+ # oracle for 032
++# MLE is pretty sure this is flipped in the untrusted check call
+ def _poly(xs: list, x: float):
+     """
+     Evaluates polynomial with coefficients xs at point x.
+@@ -76,13 +85,23 @@ def _poly(xs: list, x: float):
+ SUCCESS = "success"
+ FAILED = "failed"
+ TIMEOUT = "timed out"
++QUEUE_FILLED_UP = "queue filled up"
+ 
+ _SUCCESS = 0
+ _FAILED = 1
+ _TIMEOUT = 2
+ _UNKNOWN = 3
++_QUEUE_FILLED_UP = 4
++_KILLED_MUTANT = 5
++_DID_NOT_KILL_MUTANT = 6
+ 
+-_mapping = {_SUCCESS: SUCCESS, _FAILED: FAILED, _TIMEOUT: TIMEOUT, _UNKNOWN: None}
++_mapping = {_SUCCESS: SUCCESS, 
++            _FAILED: FAILED, 
++            _TIMEOUT: TIMEOUT, 
++            _UNKNOWN: None, 
++            _QUEUE_FILLED_UP: QUEUE_FILLED_UP,
++            _KILLED_MUTANT: "killed at least one mutant",
++            _DID_NOT_KILL_MUTANT: "did not kill any mutants"}
+ 
+ 
+ def is_floats(x) -> bool:
+@@ -95,6 +114,75 @@ def is_floats(x) -> bool:
+         return x.dtype == np.float64 or x.dtype == np.float32
+     return False
+ 
++def unsafe_postcondition_kill_execute(
++        entry_point: str,
++        code: str,
++        inputs,
++        time_limits,
++        stat: Value,
++        details: Array,
++        progress: Value,
++        # Pass the queues to the child process
++        errors_queue,
++):
++    with create_tempdir():
++        # These system calls are needed when cleaning up tempdir.
++        import os
++        import shutil
++
++        rmtree = shutil.rmtree
++        rmdir = os.rmdir
++        chdir = os.chdir
++        # Disable functionalities that can make destructive changes to the test.
++        # allow only 4GB memory usage
++        maximum_memory_bytes = 8 * 1024 * 1024 * 1024
++        reliability_guard(maximum_memory_bytes=maximum_memory_bytes)
++        exec_globals = {}
++        errors = [None] * len(inputs)
++        stat.value = _DID_NOT_KILL_MUTANT
++        try:
++            if True:
++                exec(code, exec_globals)
++                fn = exec_globals[entry_point]
++                for i, inp in enumerate(inputs):
++                    try:
++                        #print(inp)
++                        with time_limit(5):
++                            out = fn(*inp)
++                        
++                        # It did not error out
++                        details[i] = False
++
++
++                    except BaseException as e:
++                        exception = traceback.format_exception(type(e), value=e, tb=e.__traceback__)[-1]
++                        stack = traceback.format_stack()
++                        if str(e) == "!!Timed out!!":
++                            errors[i] = str(e)
++                            details[i] = False
++                        else:
++                            errors[i] = str(exception).strip()
++                            details[i] = True
++                            stat.value = _KILLED_MUTANT
++                    
++                    errors_queue.put_nowait(errors[i])
++                    progress.value += 1
++                    
++        except queue.Full:
++            print("Queue is full, truncating outs")
++            stat.value = _QUEUE_FILLED_UP
++
++        except BaseException as e:
++            #print("in base error", str(e))
++            stat.value = _FAILED
++            to_push = '!!BASE ERROR!!' + str(e)
++            errors_queue.put_nowait(to_push)
++            print("################ Code with a base error: \n", code)
++            
++        # Needed for cleaning up.
++        shutil.rmtree = rmtree
++        os.rmdir = rmdir
++        os.chdir = chdir
+ 
+ def unsafe_execute(
+     entry_point: str,
+@@ -107,6 +195,10 @@ def unsafe_execute(
+     stat: Value,
+     details: Array,
+     progress: Value,
++    outs_queue,
++    expected_outs_queue,
++    hash_queue,
++    stack_trace_queue,
+ ):
+     with create_tempdir():
+         # These system calls are needed when cleaning up tempdir.
+@@ -118,49 +210,210 @@ def unsafe_execute(
+         chdir = os.chdir
+         # Disable functionalities that can make destructive changes to the test.
+         # allow only 4GB memory usage
+-        maximum_memory_bytes = 4 * 1024 * 1024 * 1024
++        maximum_memory_bytes = 8 * 1024 * 1024 * 1024
+         reliability_guard(maximum_memory_bytes=maximum_memory_bytes)
+         exec_globals = {}
++        outs = [None] * len(inputs)
++        hashes = [None] * len(inputs)
++        expected_outs = [None] * len(inputs)
++        stack_traces = [None] * len(inputs)
+         try:
+             with swallow_io():
+                 exec(code, exec_globals)
+                 fn = exec_globals[entry_point]
+                 for i, inp in enumerate(inputs):
+                     try:
++                        got_output = False
++                        got_hash = False
++                        exp = expected[i]
++                        expected_outs[i] = str(exp)[:30]
+                         with time_limit(time_limits[i]):
+                             out = fn(*inp)
+-
+-                        exp = expected[i]
+                         exact_match = out == exp
+-
++                        outs[i] = str(out)[:30]
++                        got_output = True
++                        if is_floats(out):
++                            hashes[i] = out
++                        else:
++                            out_prime = str(out)
++                            if len(out_prime) <= 64:
++                                hashes[i] = out_prime
++                            else:
++                                hashes[i] = hash_output(out_prime)
++                        got_hash = True
+                         if "find_zero" == entry_point:
+-                            assert _poly(*out, inp) <= atol
+-
++                            assert _poly(*inp, out) <= atol
+                         if atol == 0 and is_floats(exp):
+-                            atol = 1e-6  # enforce atol for float comparison
++                            atol = 1e-6
+                         if not exact_match and atol != 0:
+                             np.testing.assert_allclose(out, exp, atol=atol)
+                         else:
+                             assert exact_match
+-                    except BaseException:
++                        details[i] = True
++                        stack_traces[i] = None
++                    except BaseException as e:
++                        full_stack_trace: str = traceback.format_exc()
++                        stack_traces[i] = full_stack_trace
++                        if not got_output:
++                            outs[i] = '!!ERROR!!:' + str(e)[:50]
++                        if not got_hash:
++                            hashes[i] = '!!ERROR!!:' + str(e)[:50]
+                         if fast_check:
+                             raise
+-
+                         details[i] = False
+-                        progress.value += 1
+-                        continue
+-
+-                    details[i] = True
++                    outs_queue.put_nowait(outs[i])
++                    expected_outs_queue.put_nowait(expected_outs[i])
++                    hash_queue.put_nowait(hashes[i])
++                    stack_trace_queue.put_nowait(stack_traces[i])
+                     progress.value += 1
+             stat.value = _SUCCESS
+-        except BaseException:
++        except queue.Full:
++            print("Queue is full, truncating outs")
++            stat.value = _QUEUE_FILLED_UP
++        except BaseException as e:
++            full_stack_trace: str = traceback.format_exc()
+             stat.value = _FAILED
+-        # Needed for cleaning up.
++            to_push = '!!BASE ERROR!!' + str(e)
++            outs_queue.put_nowait(to_push)
++            expected_outs_queue.put_nowait(to_push)
++            hash_queue.put_nowait(to_push)
++            stack_trace_queue.put_nowait(full_stack_trace)
+         shutil.rmtree = rmtree
+         os.rmdir = rmdir
+         os.chdir = chdir
+ 
+ 
++def final_queue_get(stored, to_store_queue, expected_length, timeout=None):
++
++    try:
++        while len(stored) < expected_length:
++            if timeout is None:
++                print("len before", len(stored))
++                stored.append(to_store_queue.get_nowait())
++                print("len after", len(stored))
++
++            else:
++                stored.append(to_store_queue.get(timeout=timeout))
++                
++    except queue.Empty:
++        return False
++    
++    return True
++
++def untrusted_postcondition_check(
++        code: str, # The wrapped code
++        inputs: List[Any], # The unique buggy inputs
++        entry_point: str, # the function entry point
++        ref_times: List[float], # The reference times
++        min_time_limit: float = 0.1,
++        gt_time_limit_factor: float = 2.0,
++    ) -> Tuple[str, np.ndarray]:
++    
++    time_limits = [max(min_time_limit, gt_time_limit_factor * t * 1.5) for t in ref_times]
++    if len(time_limits) != len(inputs):
++        print(len(inputs), len(time_limits))
++    timeout = sum(time_limits) + 1
++    
++    # shared memory objects
++    progress = Value("i", 0)
++    stat = Value("i", _UNKNOWN)
++    details = Array("b", [False for _ in range(len(inputs))])
++    errors_queue = Queue()  # Add this line to create a queue for outs
++
++    errors = []
++    
++    p = multiprocessing.Process(
++        target=unsafe_postcondition_kill_execute,
++        args=(
++            entry_point,
++            code,
++            inputs,
++            time_limits,
++            stat,
++            details,
++            progress,
++            # Pass the queues to the child process
++            errors_queue,
++        ),
++    )
++    p.start()
++    
++    # Get the results from the queues
++    start_time = time.time()
++    to_pull = '!!BASE ERROR!!'
++    while True:
++        if len(errors) < len(inputs):
++            moreErrors = final_queue_get(errors, errors_queue, len(inputs), timeout=1)
++
++        if len(errors) and str(errors[-1]).startswith(to_pull):
++            print("Error - investigate why this is happening", errors[-1])
++            break
++
++        # If we have reached the end of everything, then break
++        if len(errors) == len(inputs): 
++            #or _mapping[stat.value] == QUEUE_FILLED_UP:
++            #print("Received sentinel, no more results.")
++            break
++        
++        # If we timeout, then break
++        if not(moreErrors):
++            # Check the overall timeout
++            if time.time() - start_time > timeout + 5:
++                print("Overall timeout occurred... Killing process and doing one more pull")
++                break
++    
++    #print("Finished the untrusted check, and back in the main process")
++    if p.is_alive():
++        p.terminate()
++        time.sleep(0.2)
++    if p.is_alive():
++        p.kill()
++        time.sleep(0.2)
++    
++    #print("Finished killing")
++
++    details = details[: progress.value]
++
++    moreErrors = final_queue_get(errors, errors_queue, progress.value)
++    
++    stat = _mapping[stat.value]
++    
++    if not moreErrors:
++        # if one of the gets that should have grabbed more, failed
++        if not stat:
++            print("OVERALL TIMEOUT!!!", entry_point, progress.value, inputs[progress.value - 1])
++            print(progress.value, len(errors), len(inputs))
++            stat = TIMEOUT
++            
++        elif len(details) != len(inputs):
++            print("Stat is failed, errors are: ", errors)
++            stat = FAILED
++        else:
++            print("We got: should not have a stat, should be timeout: ", stat)
++            print(progress.value, len(inputs), len(errors))
++
++
++    if stat == QUEUE_FILLED_UP:
++        # In this case, you should truncate all of the outs to the progress.value
++        print("Stat is queue filled up, progress value is {} out of {}: ".format(progress.value, len(inputs)))
++        print(progress.value, len(inputs), len(errors))
++        outs = outs[:progress.value]
++        expected_outs = expected_outs[:progress.value]
++        hashes = hashes[:progress.value]
++
++    #print("Finished putting")
++    if not stat:
++        print("TIMEOUT", entry_point, len(inputs), progress.value)
++        print(progress.value, len(inputs), len(errors))
++        stat = TIMEOUT
++
++    elif len(details) != len(inputs):
++        stat = FAILED
++
++    return stat, details, errors
++
++
++
+ def untrusted_check(
+     code: str,
+     inputs: List[Any],
+@@ -171,7 +424,8 @@ def untrusted_check(
+     fast_check: bool = False,
+     min_time_limit: float = 0.1,
+     gt_time_limit_factor: float = 2.0,
+-) -> Tuple[str, np.ndarray]:
++) -> Tuple[str, np.ndarray, list, list, list, list]:
++
+     time_limits = [max(min_time_limit, gt_time_limit_factor * t) for t in ref_time]
+     timeout = sum(time_limits) + 1
+     if not fast_check:
+@@ -182,6 +436,14 @@ def untrusted_check(
+     stat = Value("i", _UNKNOWN)
+     details = Array("b", [False for _ in range(len(inputs))])
+ 
++    outs_queue = Queue()  # Add this line to create a queue for outs
++    expected_outs_queue = Queue()  # Add this line to create a queue for expected outs
++    hash_queue = Queue()  # Add this line to create a queue for hash of the outputs
++    stack_trace_queue = Queue()
++    outs = []
++    expected_outs = []
++    hashes = []
++    stack_traces = []
+     p = multiprocessing.Process(
+         target=unsafe_execute,
+         args=(
+@@ -196,28 +458,76 @@ def untrusted_check(
+             stat,
+             details,
+             progress,
++            # Pass the queues to the child process
++            outs_queue,
++            expected_outs_queue,
++            hash_queue,
++            stack_trace_queue,
+         ),
+     )
+     p.start()
+-    p.join(timeout=timeout + 1)
++    
++    # Get the results from the queues
++    start_time = time.time()
++    to_pull = '!!BASE ERROR!!'
++    while True:
++        if len(outs) < len(inputs):
++            moreOuts = final_queue_get(outs, outs_queue, len(inputs), timeout=1)
++        if len(expected_outs) < len(inputs):
++            moreExpected = final_queue_get(expected_outs, expected_outs_queue, len(inputs), timeout=1)
++        if len(hashes) < len(inputs):
++            moreHashes = final_queue_get(hashes, hash_queue, len(inputs), timeout=1)
++        if len(stack_traces) < len(inputs):
++            moreStackTraces = final_queue_get(stack_traces, stack_trace_queue, len(inputs), timeout=1)
++        if (len(outs) and len(expected_outs) and len(hashes) and len(stack_traces)) and \
++            (str(outs[-1]).startswith(to_pull) and str(expected_outs[-1]).startswith(to_pull) and str(hashes[-1]).startswith(to_pull)):
++                print("This one errored out - breaking: ",  outs[-1])
++                break
++        if (len(outs) == len(inputs) and len(expected_outs) == len(inputs) and len(hashes) == len(inputs) and len(stack_traces) == len(inputs)) or \
++                _mapping[stat.value] == QUEUE_FILLED_UP:
++            break
++        if not(moreOuts and moreExpected and moreHashes and moreStackTraces):
++            if time.time() - start_time > timeout + 5:
++                print("Overall timeout occurred... Killing process and doing one more pull")
++                break
+     if p.is_alive():
+         p.terminate()
+-        time.sleep(0.1)
++        time.sleep(0.2)
+     if p.is_alive():
+         p.kill()
+-        time.sleep(0.1)
+-
+-    stat = _mapping[stat.value]
++        time.sleep(0.2)
+     details = details[: progress.value]
+-
++    moreOuts = final_queue_get(outs, outs_queue, progress.value)
++    moreExpected = final_queue_get(expected_outs, expected_outs_queue, progress.value)
++    moreHashes = final_queue_get(hashes, hash_queue, progress.value)
++    moreStackTraces = final_queue_get(stack_traces, stack_trace_queue, progress.value)
++    stat = _mapping[stat.value]
++    if (not moreOuts) or (not moreExpected) or (not moreHashes) or (not moreStackTraces):
++        if not stat:
++            print("OVERALL TIMEOUT!!!", entry_point, progress.value, inputs[progress.value - 1])
++            print(progress.value, len(inputs), len(outs), len(expected_outs), len(hashes), len(stack_traces))
++            stat = TIMEOUT
++        elif stat == FAILED:
++            print("Stat is failed, outs are: ", outs)
++        elif stat == SUCCESS:
++            print("This was marked as success, but something is not alligning. Should not have a stat, should be timeout: ", stat)
++            print(progress.value, len(inputs), len(outs), len(expected_outs), len(hashes), len(stack_traces))
++    if stat == QUEUE_FILLED_UP:
++        print("Stat is queue filled up, progress value is {} out of {}: ".format(progress.value, len(inputs)))
++        print(progress.value, len(inputs), len(outs), len(expected_outs), len(hashes), len(stack_traces))
++        outs = outs[:progress.value]
++        expected_outs = expected_outs[:progress.value]
++        hashes = hashes[:progress.value]
++        stack_traces = stack_traces[:progress.value]
+     if not stat:
++        print("TIMEOUT", entry_point, len(inputs), progress.value)
++        print(progress.value, len(inputs), len(outs), len(expected_outs), len(hashes), len(stack_traces))
+         stat = TIMEOUT
+-
+     if stat == SUCCESS:
+         if len(details) != len(inputs) or not all(details):
+             stat = FAILED
++    return stat, details, outs, expected_outs, hashes, stack_traces
+ 
+-    return stat, details
+ 
+ 
+ def evaluate_files(
+diff --git a/evalplus/eval/utils.py b/evalplus/eval/utils.py
+index 9699ca4..91e4d73 100644
+--- a/evalplus/eval/utils.py
++++ b/evalplus/eval/utils.py
+@@ -18,11 +18,10 @@ def swallow_io():
+             with redirect_stdin(stream):
+                 yield
+ 
+-
+ @contextlib.contextmanager
+ def time_limit(seconds: float):
+     def signal_handler(signum, frame):
+-        raise TimeoutException("Timed out!")
++        raise TimeoutException("!!Timed out!!")
+ 
+     signal.setitimer(signal.ITIMER_REAL, seconds)
+     signal.signal(signal.SIGALRM, signal_handler)
+diff --git a/evalplus/evaluate.py b/evalplus/evaluate.py
+index 26bbcec..cd96135 100644
+--- a/evalplus/evaluate.py
++++ b/evalplus/evaluate.py
+@@ -31,7 +31,6 @@ from evalplus.gen.util import trusted_exec
+ # 2nd item (optional): the detailed pass/fail boolean for each input
+ Result = Tuple[str, List[bool]]
+ 
+-
+ def get_groundtruth(problems, hashcode):
+     cache_file = os.path.join(CACHE_DIR, f"{hashcode}.pkl")
+     if os.path.exists(cache_file):
+@@ -43,6 +42,8 @@ def get_groundtruth(problems, hashcode):
+     tbegin = time.time()
+     expected_output = {}
+     for task_id, problem in problems.items():
++        #print(task_id, len(problem["base_input"]), len(problem["plus_input"]))
++        #print(problem['plus_input'])
+         oracle = {}
+         oracle["base"], oracle["base_time"] = trusted_exec(
+             problem["prompt"] + problem["canonical_solution"],
+@@ -62,14 +63,16 @@ def get_groundtruth(problems, hashcode):
+ 
+     with open(cache_file, "wb") as f:
+         pickle.dump(expected_output, f)
+-
++    import sys
++    sys.set_int_max_str_digits(0)
++    #json.dump(expected_output, open(f"/app/expected_output.json", "w"))
+     return expected_output
+ 
+ 
+ def check_correctness(
+     completion_id: int,
+     problem: Dict[str, Any],
+-    solution: str,
++    solutionDict: Dict[Any, Any],
+     expected_output: Dict[str, List],
+     base_only=False,
+     fast_check=False,
+@@ -77,13 +80,22 @@ def check_correctness(
+     min_time_limit: float = 0.1,
+     gt_time_limit_factor: float = 2.0,
+ ) -> Dict[str, Union[int, Optional[Result]]]:
++    if solutionDict["is_duplicate"] is None:
++        isdupe = False
++    elif solutionDict["is_duplicate"]["SyntaxMatch"] is None:
++        isdupe = False
++    else:
++        isdupe = True
+     ret = {
+         "completion_id": completion_id,
+         "task_id": problem["task_id"],
+         "_identifier": identifier,
++        "llm_response_num": solutionDict["response_num"],
++        "compiles": solutionDict["compiles"],
++        "is_syntax_dupe": isdupe,
+     }
+     ret["base"] = untrusted_check(
+-        solution,
++        solutionDict["solution"],
+         problem["base_input"],
+         problem["entry_point"],
+         expected=expected_output["base"],
+@@ -96,7 +108,7 @@ def check_correctness(
+ 
+     if not base_only:
+         ret["plus"] = untrusted_check(
+-            solution,
++            solutionDict["solution"],
+             problem["plus_input"],
+             problem["entry_point"],
+             expected=expected_output["plus"],
+@@ -120,7 +132,9 @@ def evaluate_humaneval(flags):
+         result_path = os.path.join(flags.samples, "eval_results.json")
+     else:
+         assert flags.samples.endswith(".jsonl")
+-        result_path = flags.samples.replace(".jsonl", "_eval_results.json")
++        result_path = os.path.join('/app', "eval_results_" + flags.samples.split('/')[-1])
++        print(result_path)
++        #result_path = flags.samples.replace(".jsonl", "_eval_results.json")
+ 
+     if os.path.isfile(result_path) and not flags.i_just_wanna_run:
+         print(f"Load from {result_path}")
+@@ -130,7 +144,6 @@ def evaluate_humaneval(flags):
+         results = compatible_eval_result(results)
+     else:
+         problems = get_human_eval_plus(mini=flags.mini)
+-
+         dataset_hash = get_human_eval_plus_hash()
+         expected_output = get_groundtruth(problems, dataset_hash)
+ 
+@@ -155,11 +168,12 @@ def evaluate_humaneval(flags):
+                     if "solution" in sample
+                     else problems[task_id]["prompt"] + sample["completion"]
+                 )
+-                remainings.add(sample["_identifier"])
++                sample["solution"] = solution
++                remainings.add(sample["_identifier"] + '_llmResponseNum_' + str(sample["response_num"]))
+                 args = (
+                     completion_id[task_id],
+                     problems[task_id],
+-                    solution,
++                    sample,
+                     expected_output[task_id],
+                     flags.base_only,
+                     not flags.test_details,  # fast_check
+@@ -180,14 +194,18 @@ def evaluate_humaneval(flags):
+                     time.sleep(10)
+                     if last_size == len(remainings) and len(remainings) > 0:
+                         print(f"Stucking for 10 seconds... {len(remainings)} left")
+-                        for remaining in remainings:
++                        
++                        print("First five remaining:")
++                        for remaining in list(remainings)[:5]:
+                             print(remaining)
++                            #pass
++                            
+ 
+             threading.Thread(target=stucking_checker).start()
+ 
+             for future in tqdm(as_completed(futures), total=n_samples):
+                 result = future.result()
+-                remainings.remove(result["_identifier"])
++                remainings.remove(result["_identifier"] + '_llmResponseNum_' + str(result["llm_response_num"]))
+                 eval_results[result["task_id"]].append(result)
+ 
+         # sort the results for each problem by completion_id
+@@ -195,6 +213,9 @@ def evaluate_humaneval(flags):
+             task_results.sort(key=lambda x: x["completion_id"])
+             results["eval"][task_id] = {
+                 "nfiles": len(task_results),
++                "llm_response_num": [x["llm_response_num"] for x in task_results],
++                "compiles": [x["compiles"] for x in task_results],
++                "is_syntax_dupe": [x["is_syntax_dupe"] for x in task_results],
+                 "base": [x["base"] for x in task_results],
+                 "plus": [x["plus"] for x in task_results]
+                 if not flags.base_only
+@@ -240,7 +261,7 @@ def evaluate_humaneval(flags):
+ 
+     pass_at_k = {
+         f"pass@{k}": estimate_pass_at_k(total, base_correct, k).mean()
+-        for k in [1, 10, 100]
++        for k in [1, 10, 100, 200]
+         if total.min() >= k
+     }
+     print("Base")
+@@ -250,13 +271,14 @@ def evaluate_humaneval(flags):
+         print("Base + Extra")
+         pass_at_k = {
+             f"pass@{k}": estimate_pass_at_k(total, np.array(new_correct), k).mean()
+-            for k in [1, 10, 100]
++            for k in [1, 10, 100, 200]
+             if (total >= k).all()
+         }
+         print(pass_at_k)
+ 
+ 
+ def main():
++    print("YOU ARE USING THE EVALPLUS HANDLER ADAPTED FOR NL2POSTCONDITION")
+     parser = argparse.ArgumentParser()
+     parser.add_argument("--dataset", required=True, type=str)
+     parser.add_argument("--samples", required=True, type=str)
+@@ -264,9 +286,10 @@ def main():
+     parser.add_argument("--parallel", default=None, type=int)
+     parser.add_argument("--i-just-wanna-run", action="store_true")
+     parser.add_argument("--test-details", action="store_true")
+-    parser.add_argument("--min-time-limit", default=0.1, type=float)
++    parser.add_argument("--min-time-limit", default=0.2, type=float)
+     parser.add_argument("--gt-time-limit-factor", default=2.0, type=float)
+     parser.add_argument("--mini", action="store_true")
++    parser.add_argument("--insert_alt_ground_truth", action="store_true")
+     args = parser.parse_args()
+ 
+     if args.dataset == "humaneval":
+diff --git a/setup.py b/setup.py
+new file mode 100644
+index 0000000..ac13220
+--- /dev/null
++++ b/setup.py
+@@ -0,0 +1,37 @@
++from setuptools import setup, find_packages
++
++setup(
++    name="evalplus",
++    use_scm_version={
++        "write_to": "evalplus/_version.py",
++        "version_scheme": "release-branch-semver",
++        "local_scheme": "no-local-version",
++    },
++    setup_requires=["setuptools>=45", "setuptools_scm[toml]>=6.2"],
++    description="EvalPlus for rigorous evaluation of LLM-synthesized code",
++    long_description=open("README.md").read(),
++    long_description_content_type="text/markdown",
++    url="https://github.com/evalplus/evalplus",
++    license="Apache-2.0",
++    classifiers=[
++        "Operating System :: OS Independent",
++        "Programming Language :: Python :: 3",
++        "License :: OSI Approved :: Apache Software License",
++    ],
++    packages=find_packages(exclude=["evalplus._experimental*"]),
++    python_requires=">=3.8",
++    install_requires=[
++        "wget>=3.2",
++        "tempdir>=0.7.1",
++        "multipledispatch>=0.6.0",
++        "appdirs>=1.4.4",
++        "numpy>=1.19.5",
++        "tqdm>=4.56.0",
++    ],
++    entry_points={
++        "console_scripts": [
++            "evalplus.evaluate=evalplus.evaluate:main",
++            "evalplus.inputgen=evalplus.inputgen:main",
++        ],
++    },
++)
