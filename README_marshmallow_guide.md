@@ -24,7 +24,7 @@ pip install marshmallow pytest tqdm openai
 ---
 
 ### Bước 2: Trích xuất tập dữ liệu (Dataset Extraction)
-Chạy file [extract_marshmallow_dataset.py](file:///d:/code/web/extract_marshmallow_dataset.py) từ thư mục gốc để trích xuất các hàm, docstring và các ca kiểm thử (tests) tương ứng thành định dạng JSONL.
+Chạy file [extract_marshmallow_dataset.py](./extract_marshmallow_dataset.py) từ thư mục gốc để trích xuất các hàm, docstring và các ca kiểm thử (tests) tương ứng thành định dạng JSONL.
 
 **Lệnh thực hiện:**
 ```bash
@@ -45,7 +45,7 @@ Trong thư mục `./out_marshmallow_docfilter/` sẽ xuất hiện các file:
 ---
 
 ### Bước 3: Xác thực và lọc Test Cases dùng được (Validation)
-Một số test cases sau khi trích xuất có thể không khả thi hoặc bị lỗi cú pháp do tham số hóa. Chúng ta sử dụng [validate_marshmallow_tests.py](file:///d:/code/web/SpecMind/evalplus/validate_marshmallow_tests.py) để lọc ra các test cases thực sự chạy được bằng pytest.
+Một số test cases sau khi trích xuất có thể không khả thi hoặc bị lỗi cú pháp do tham số hóa. Chúng ta sử dụng [validate_marshmallow_tests.py](./SpecMind/evalplus/validate_marshmallow_tests.py) để lọc ra các test cases thực sự chạy được bằng pytest.
 
 **Lệnh thực hiện:**
 ```bash
@@ -61,7 +61,7 @@ python validate_marshmallow_tests.py --tests-path ../../out_marshmallow_docfilte
 ---
 
 ### Bước 4: Cấu hình tham số đánh giá
-Trước khi tiến hành chạy đánh giá hàng loạt, bạn hãy mở file [run_marshmallow_all.py](file:///d:/code/web/SpecMind/evalplus/run_marshmallow_all.py) và điều chỉnh các thông số mặc định (nằm ở đầu file, khoảng dòng 43-56) cho phù hợp với nhu cầu thử nghiệm:
+Trước khi tiến hành chạy đánh giá hàng loạt, bạn hãy mở file [run_marshmallow_all.py](./SpecMind/evalplus/run_marshmallow_all.py) và điều chỉnh các thông số mặc định (nằm ở đầu file, khoảng dòng 43-56) cho phù hợp với nhu cầu thử nghiệm:
 
 | Biến Cấu Hình | Giá Trị Mặc Định | Ý Nghĩa / Cách Chỉnh Sửa |
 | :--- | :--- | :--- |
